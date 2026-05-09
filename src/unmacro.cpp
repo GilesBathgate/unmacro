@@ -68,21 +68,20 @@ public:
         Info.InternalSemi = internalSemicolon;
         Info.ExternalSemiLoc = SourceLocation();
 
-        if (!internalSemicolon) {
-            std::optional<Token> SemicolonTok = Lexer::findNextToken(EndLoc, SM, PP.getLangOpts());
-            if (SemicolonTok && SemicolonTok->is(tok::semi)) {
-                Info.ExternalSemiLoc = SemicolonTok->getLocation();
-            }
+        std::optional<Token> SemicolonTok = Lexer::findNextToken(EndLoc, SM, PP.getLangOpts());
+        if (SemicolonTok && SemicolonTok->is(tok::semi)) {
+            Info.ExternalSemiLoc = SemicolonTok->getLocation();
         }
+
         Expansions.push_back(Info);
     }
 };
 
 class BodyVisitor : public RecursiveASTVisitor<BodyVisitor> {
-    std::set<SourceLocation> &DangerousLocs;
+    std::set<unsigned> &DangerousOffsets;
     SourceManager &SM;
 public:
-    BodyVisitor(std::set<SourceLocation> &L, SourceManager &SM) : DangerousLocs(L), SM(SM) {}
+    BodyVisitor(std::set<unsigned> &O, SourceManager &SM) : DangerousOffsets(O), SM(SM) {}
 
     bool VisitIfStmt(IfStmt *S) {
         check(S->getThen());
@@ -106,8 +105,8 @@ private:
     void check(Stmt *S) {
         if (S && !isa<CompoundStmt>(S)) {
             SourceLocation Loc = S->getBeginLoc();
-            if (Loc.isMacroID()) {
-                DangerousLocs.insert(SM.getExpansionLoc(Loc));
+            if (Loc.isValid() && SM.isWrittenInMainFile(SM.getExpansionLoc(Loc))) {
+                DangerousOffsets.insert(SM.getFileOffset(SM.getExpansionLoc(Loc)));
             }
         }
     }
@@ -124,23 +123,37 @@ public:
 
     void EndSourceFileAction() override {
         CompilerInstance &CI = getCompilerInstance();
+        if (!CI.hasASTContext()) return;
+
         ASTContext &Context = CI.getASTContext();
         SourceManager &SM = Context.getSourceManager();
 
-        std::set<SourceLocation> DangerousLocs;
-        BodyVisitor Visitor(DangerousLocs, SM);
+        std::set<unsigned> DangerousOffsets;
+        BodyVisitor Visitor(DangerousOffsets, SM);
         Visitor.TraverseAST(Context);
 
         Rewriter TheRewriter;
         TheRewriter.setSourceMgr(SM, Context.getLangOpts());
 
         for (const auto &Info : Expansions) {
-            bool isDangerous = DangerousLocs.count(Info.Range.getBegin());
+            unsigned StartOffset = SM.getFileOffset(Info.Range.getBegin());
+            bool startIsDangerous = DangerousOffsets.count(StartOffset);
 
-            if (!Info.InternalSemi && Info.ExternalSemiLoc.isValid() && !isDangerous) {
-                TheRewriter.RemoveText(SourceRange(Info.Range.getBegin(), Info.ExternalSemiLoc));
-            } else {
+            bool semiIsDangerous = false;
+            if (Info.ExternalSemiLoc.isValid()) {
+                unsigned SemiOffset = SM.getFileOffset(Info.ExternalSemiLoc);
+                semiIsDangerous = DangerousOffsets.count(SemiOffset);
+            }
+
+            if (startIsDangerous || semiIsDangerous) {
+                // Keep the semicolon
                 TheRewriter.RemoveText(Info.Range);
+            } else {
+                if (!Info.InternalSemi && Info.ExternalSemiLoc.isValid()) {
+                    TheRewriter.RemoveText(SourceRange(Info.Range.getBegin(), Info.ExternalSemiLoc));
+                } else {
+                    TheRewriter.RemoveText(Info.Range);
+                }
             }
         }
 
@@ -152,8 +165,8 @@ public:
             }
         } else if (!InplaceOpt) {
             bool Invalid = false;
-            llvm::StringRef Code = SM.getBufferData(SM.getMainFileID(), &Invalid);
-            if (!Invalid) llvm::outs() << Code;
+            llvm::StringRef Data = SM.getBufferData(SM.getMainFileID(), &Invalid);
+            if (!Invalid) llvm::outs() << Data;
         }
     }
 };

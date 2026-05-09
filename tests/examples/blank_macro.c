@@ -9,5 +9,6 @@
 int main() {
     LOG("hello");
     if (1) LOG("world");
+    else printf("else\n");
     return 0;
 }
