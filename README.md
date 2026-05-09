@@ -14,18 +14,29 @@ mkdir -p build
 cd build
 cmake ..
 make
+# Create C++ symlink
+ln -s unmacro unmacro++
 ```
 
 ## Usage
 ```bash
-./build/unmacro --macro-name=MY_MACRO <source_file> -- [compiler_flags]
+./build/unmacro --macro-name=MY_MACRO [options] <source_file> -- [compiler_flags]
 ```
-Use `--inplace` to modify files directly.
+
+### Options
+- `--macro-name=<string>`: The specific macro to remove (Required).
+- `--inplace`: Modify the file directly.
+- `--remove-extra-statements`: Remove empty `if`, `for`, `while`, and `do` statements that become empty after macro removal.
 
 ### C++ Usage
-When processing C++ files, you may need to specify the C++ standard and include paths:
+For C++ files or headers, you can use the `unmacro++` symlink, which automatically adds the `-xc++` flag:
+```bash
+./build/unmacro++ --macro-name=MY_TRACE file.cpp -- -std=c++17
+```
+
+Alternatively, if using the base `unmacro` tool, ensure you pass the correct include paths and flags after the `--` separator:
 ```bash
 ./build/unmacro --macro-name=MY_TRACE file.cpp -- -std=c++17 -I/path/to/includes
 ```
 
-**Note:** If the tool encounters errors parsing system headers or standard libraries, ensure you are passing the correct include paths and flags. For C++ files with complex dependencies, it is recommended to use a compilation database (`compile_commands.json`) or provide all necessary `-I` flags after the `--` separator.
+**Note:** The tool automatically detects C++ headers (`.h` files) and applies `-xc++` if a C++ standard flag (e.g., `-std=c++17`) is provided.

@@ -9,7 +9,14 @@ find_package(Clang REQUIRED CONFIG)
 message(STATUS "Found Clang ${Clang_VERSION}")
 include_directories(${CLANG_INCLUDE_DIRS})
 
-add_executable(unmacro src/unmacro.cpp)
+set(SOURCES
+  src/unmacro.cpp
+  src/UnmacroPPCallbacks.cpp
+  src/BodyVisitor.cpp
+  src/UnmacroAction.cpp
+)
+
+add_executable(unmacro ${SOURCES})
 
 target_link_libraries(unmacro PRIVATE
   clang-cpp

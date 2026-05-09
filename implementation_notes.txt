@@ -1,0 +1,29 @@
+# unmacro Implementation Notes
+
+## Technical Difficulties & Snags
+
+### Clang LibTooling Library Selection
+- **Issue:** Linking individual Clang libraries (e.g., `clangFrontend`, `clangTooling`) frequently led to "CommandLine Error: Option registered more than once!" because of symbol duplication between monolithic and component libraries.
+- **Workaround:** Linked against the monolithic `clang-cpp` and `LLVM` libraries in `CMakeLists.txt`. This provides all necessary symbols without the registration conflict.
+
+### Semicolon Handling in Control Structures
+- **Issue:** Removing a macro call that serves as the single statement in an `if`, `while`, or `for` block (e.g., `if (cond) MACRO();`) can alter program logic or cause syntax errors if the trailing semicolon is also removed.
+- **Solution:** Implemented an AST-aware pass using `RecursiveASTVisitor`. It identifies macro calls in these "dangerous" positions and ensures a semicolon remains (treating it as an empty statement) while still removing the macro name and arguments.
+
+### C++ Header Processing
+- **Issue:** Processing `.h` files as C++ headers often fails if standard C++ flags (like `-std=c++17`) are provided but the tool defaults to C mode for headers.
+- **Workaround:**
+    - Added an `ArgumentsAdjuster` that automatically injects `-xc++` if a C++ standard flag is detected and the file extension is `.h`.
+    - Implemented `unmacro++` symlink support; when the tool is run as `unmacro++`, it forces C++ mode for all files.
+
+### Sandbox Resource Limits
+- **Issue:** Complex C++ headers (like `<iostream>`) cause the LibTooling parser to crash or time out in the restricted sandbox environment due to missing standard include paths or resource directories.
+- **Mitigation:** Verified tool logic on simplified, self-contained test cases. Documented that users in production environments should provide proper include paths via the `--` separator.
+
+### AST vs. Preprocessor Synchronization
+- **Issue:** `PPCallbacks` run during preprocessing, while `ASTVisitor` runs after. Matching macro expansions between these two phases requires careful use of `SourceLocation` and `FileOffset` tracking.
+- **Implementation:** The tool captures all relevant macro expansion ranges in the first phase and then uses the AST visitor to classify these ranges as "safe" or "dangerous" for semicolon removal.
+
+## Design Clarifications
+- **Blank vs. No-op Macros:** The tool distinguishes between macros that expand to nothing (`#define LOG(x)`) and those that expand to a no-op statement (`#define LOG(x) (void)0`). Both are handled by removing the call range and intelligently peeking for trailing semicolons.
+- **Remove Extra Statements:** Implemented an optional `--remove-extra-statements` flag. It uses a recursive check to see if a control structure (if, for, while, do) contains only Targeted Macros or other empty statements, and if so, removes the entire structure.
