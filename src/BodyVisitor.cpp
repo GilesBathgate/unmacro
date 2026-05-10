@@ -2,6 +2,8 @@
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
+#include <iostream>
+#include <optional>
 
 using namespace clang;
 
@@ -40,12 +42,20 @@ bool BodyVisitor::VisitDoStmt(DoStmt *S) {
 
 void BodyVisitor::checkDangerous(Stmt *S) {
     if (!S) return;
-    if (!isa<CompoundStmt>(S)) {
-        SourceLocation Loc = S->getBeginLoc();
-        if (Loc.isValid()) {
-            SourceLocation ExpLoc = Loc.isMacroID() ? SM.getExpansionLoc(Loc) : Loc;
-            if (SM.isWrittenInMainFile(ExpLoc)) {
-                 DangerousOffsets.insert(SM.getFileOffset(ExpLoc));
+    if (isa<CompoundStmt>(S)) return;
+
+    SourceLocation Loc = S->getBeginLoc();
+    if (!Loc.isValid()) return;
+
+    SourceLocation ExpLoc = Loc.isMacroID() ? SM.getExpansionLoc(Loc) : Loc;
+    if (SM.isWrittenInMainFile(ExpLoc)) {
+        unsigned Offset = SM.getFileOffset(ExpLoc);
+        DangerousOffsets.insert(Offset);
+
+        // Also mark the macro call itself as dangerous if the null stmt is at its external semi
+        for (const auto &Info : Expansions) {
+            if (Info.ExternalSemiLoc.isValid() && SM.getFileOffset(SM.getExpansionLoc(Info.ExternalSemiLoc)) == Offset) {
+                DangerousOffsets.insert(SM.getFileOffset(Info.Range.getBegin()));
             }
         }
     }
@@ -82,15 +92,6 @@ void BodyVisitor::markForRemoval(Stmt *S) {
     SourceLocation Start = SM.getExpansionLoc(S->getBeginLoc());
     SourceLocation End = SM.getExpansionLoc(S->getEndLoc());
     if (Start.isValid() && End.isValid() && SM.isWrittenInMainFile(Start)) {
-        // If the body was not a CompoundStmt, it likely has a trailing semicolon
-        // that belongs to the statement inside it, which we've already handled
-        // or will handle. But for the control structure itself:
-        if (isa<IfStmt>(S) || isa<ForStmt>(S) || isa<WhileStmt>(S)) {
-             // These don't have trailing semicolons unless the body is a simple statement
-             // which ALREADY has a semicolon.
-        }
-
-        // Extension to trailing semicolon for do-while
         if (isa<DoStmt>(S)) {
             std::optional<Token> SemiTok = Lexer::findNextToken(End, SM, LangOpts);
             if (SemiTok && SemiTok->is(tok::semi)) {

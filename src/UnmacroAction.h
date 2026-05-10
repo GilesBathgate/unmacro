@@ -8,12 +8,12 @@
 
 class UnmacroAction : public clang::ASTFrontendAction {
     std::vector<ExpansionInfo> Expansions;
-    std::string TargetMacroName;
+    std::vector<std::string> TargetMacroNames;
     bool Inplace;
     bool RemoveExtraStatements;
 
 public:
-    UnmacroAction(llvm::StringRef MacroName, bool Inplace, bool RemoveExtraStatements);
+    UnmacroAction(const std::vector<std::string> &MacroNames, bool Inplace, bool RemoveExtraStatements);
     std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &CI, llvm::StringRef file) override;
     void EndSourceFileAction() override;
 };

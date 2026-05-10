@@ -9,7 +9,7 @@ using namespace clang::tooling;
 using namespace llvm;
 
 static cl::OptionCategory UnmacroCategory("unmacro options");
-static cl::opt<std::string> MacroNameOpt("macro-name", cl::desc("The specific macro to remove"), cl::Required, cl::cat(UnmacroCategory));
+static cl::list<std::string> MacroNamesOpt("macro-name", cl::desc("The specific macro to remove (can be specified multiple times)"), cl::OneOrMore, cl::cat(UnmacroCategory));
 static cl::opt<bool> InplaceOpt("inplace", cl::desc("Modify the file directly"), cl::init(false), cl::cat(UnmacroCategory));
 static cl::opt<bool> RemoveExtraStatementsOpt("remove-extra-statements", cl::desc("Remove empty if/for/while/do statements after macro removal"), cl::init(false), cl::cat(UnmacroCategory));
 
@@ -47,17 +47,23 @@ int main(int argc, const char **argv) {
     });
 
     class UnmacroActionFactory : public FrontendActionFactory {
-        std::string MacroName;
+        std::vector<std::string> MacroNames;
         bool Inplace;
         bool RemoveExtraStatements;
     public:
-        UnmacroActionFactory(std::string Name, bool Inplace, bool Extra)
-            : MacroName(Name), Inplace(Inplace), RemoveExtraStatements(Extra) {}
+        UnmacroActionFactory(std::vector<std::string> Names, bool Inplace, bool Extra)
+            : MacroNames(Names), Inplace(Inplace), RemoveExtraStatements(Extra) {}
         std::unique_ptr<FrontendAction> create() override {
-            return std::make_unique<UnmacroAction>(MacroName, Inplace, RemoveExtraStatements);
+            return std::make_unique<UnmacroAction>(MacroNames, Inplace, RemoveExtraStatements);
         }
     };
 
-    UnmacroActionFactory Factory(MacroNameOpt, InplaceOpt, RemoveExtraStatementsOpt);
-    return Tool.run(&Factory);
+    std::vector<std::string> MacroNames;
+    for (const auto &Name : MacroNamesOpt) {
+        MacroNames.push_back(Name);
+    }
+    UnmacroActionFactory Factory(MacroNames, InplaceOpt, RemoveExtraStatementsOpt);
+    int Result = Tool.run(&Factory);
+    llvm::errs() << "[Main] Tool.run finished with " << Result << "\n";
+    return Result;
 }

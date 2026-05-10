@@ -1,17 +1,27 @@
 #include "UnmacroPPCallbacks.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/MacroArgs.h"
+#include <algorithm>
+#include <optional>
 
 using namespace clang;
 
-UnmacroPPCallbacks::UnmacroPPCallbacks(std::vector<ExpansionInfo> &E, llvm::StringRef Name, Preprocessor &PP)
-    : Expansions(E), TargetMacroName(Name), PP(PP) {}
+UnmacroPPCallbacks::UnmacroPPCallbacks(std::vector<ExpansionInfo> &E, const std::vector<std::string> &Names, Preprocessor &PP)
+    : Expansions(E), TargetMacroNames(Names), PP(PP) {}
 
 void UnmacroPPCallbacks::MacroExpands(const Token &MacroNameTok, const MacroDefinition &MD,
                                      SourceRange Range, const MacroArgs *Args) {
     const IdentifierInfo *II = MacroNameTok.getIdentifierInfo();
-    if (!II || II->getName() != TargetMacroName)
-        return;
+    if (!II) return;
+
+    bool match = false;
+    for (const auto &TargetName : TargetMacroNames) {
+        if (II->getName() == TargetName) {
+            match = true;
+            break;
+        }
+    }
+    if (!match) return;
 
     SourceManager &SM = PP.getSourceManager();
     SourceLocation StartLoc = SM.getExpansionLoc(Range.getBegin());
@@ -39,6 +49,7 @@ void UnmacroPPCallbacks::MacroExpands(const Token &MacroNameTok, const MacroDefi
     Info.InternalSemi = internalSemicolon;
     Info.ExternalSemiLoc = SourceLocation();
 
+    // Check if the macro call is followed by a semicolon
     std::optional<Token> SemicolonTok = Lexer::findNextToken(EndLoc, SM, PP.getLangOpts());
     if (SemicolonTok && SemicolonTok->is(tok::semi)) {
         Info.ExternalSemiLoc = SemicolonTok->getLocation();
