@@ -46,10 +46,13 @@ void UnmacroPPCallbacks::MacroExpands(const Token &MacroNameTok, const MacroDefi
 
     ExpansionInfo Info;
     Info.Range = SourceRange(StartLoc, EndLoc);
+    Info.MacroName = II->getName().str();
     Info.InternalSemi = internalSemicolon;
     Info.ExternalSemiLoc = SourceLocation();
 
     // Check if the macro call is followed by a semicolon
+    // We need to look past the closing parenthesis if it's a function-like macro
+    // findNextToken is perfect for this.
     std::optional<Token> SemicolonTok = Lexer::findNextToken(EndLoc, SM, PP.getLangOpts());
     if (SemicolonTok && SemicolonTok->is(tok::semi)) {
         Info.ExternalSemiLoc = SemicolonTok->getLocation();

@@ -5,7 +5,5 @@ typedef int* SHalfedge_handle;
 struct Face { int* shalfedges_begin(); int* shalfedges_end(); };
 
 void test(Face* E) {
-    SHalfedge_handle eee;
-    CGAL_forall_shalfedges_of(eee, E)
-      CGAL_NEF_TRACEN("test");
+    SHalfedge_handle eee; CGAL_forall_shalfedges_of(eee, E) CGAL_NEF_TRACEN("test");
 }

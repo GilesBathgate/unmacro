@@ -2,7 +2,6 @@
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
-#include <iostream>
 #include <optional>
 
 using namespace clang;
@@ -47,16 +46,27 @@ void BodyVisitor::checkDangerous(Stmt *S) {
     SourceLocation Loc = S->getBeginLoc();
     if (!Loc.isValid()) return;
 
-    SourceLocation ExpLoc = Loc.isMacroID() ? SM.getExpansionLoc(Loc) : Loc;
-    if (SM.isWrittenInMainFile(ExpLoc)) {
-        unsigned Offset = SM.getFileOffset(ExpLoc);
-        DangerousOffsets.insert(Offset);
+    // We only care about non-compound bodies that are EITHER a macro expansion
+    // or a NullStmt resulting from an empty expansion.
 
-        // Also mark the macro call itself as dangerous if the null stmt is at its external semi
+    SourceLocation ExpLoc = SM.getExpansionLoc(Loc);
+    if (!SM.isWrittenInMainFile(ExpLoc)) return;
+    unsigned Offset = SM.getFileOffset(ExpLoc);
+
+    bool isMacro = Loc.isMacroID();
+    bool isNull = isa<NullStmt>(S);
+
+    if (isMacro) {
+        // If the statement starts with a macro, and it's the body of a control structure,
+        // we must make sure that macro's removal leaves a semicolon if needed.
+        DangerousOffsets.insert(Offset);
+    } else if (isNull) {
+        // If it's a null statement (just a semicolon), and it's at the location
+        // where a macro used to be, we should mark that macro as dangerous.
         for (const auto &Info : Expansions) {
-            if (Info.ExternalSemiLoc.isValid() && SM.getFileOffset(SM.getExpansionLoc(Info.ExternalSemiLoc)) == Offset) {
-                DangerousOffsets.insert(SM.getFileOffset(Info.Range.getBegin()));
-            }
+             if (Info.ExternalSemiLoc.isValid() && SM.getFileOffset(SM.getExpansionLoc(Info.ExternalSemiLoc)) == Offset) {
+                 DangerousOffsets.insert(SM.getFileOffset(Info.Range.getBegin()));
+             }
         }
     }
 }
